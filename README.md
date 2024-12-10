@@ -36,9 +36,38 @@ To install this library, you can use Composer. Run the following command:
 composer require bigb06/phpcypherfile
 ```
 
+## Example
+
+Basic code to use PHPCypherFile (see example.php for full example and keys generation):
+
+```php
+
+use PHPCypherFile\PHPCypherFile;
+
+// Encrypt the file
+PHPCypherFile::encryptFile($inputFile, $encryptedFile,$publicKey);
+
+// Decrypt the file
+PHPCypherFile::decryptFile($encryptedFile, $decryptedFile,$privateKey);
+```
+
+### Keys Generation
+```php
+$config = [
+    "private_key_bits" => 4096,
+    "private_key_type" => OPENSSL_KEYTYPE_RSA,
+];
+$res = openssl_pkey_new($config);
+openssl_pkey_export($res, $privateKeyString);
+$details = openssl_pkey_get_details($res);
+$publicKeyString = $details["key"];
+$publicKey = openssl_pkey_get_public($publicKeyString);
+$privateKey = openssl_pkey_get_private($privateKeyString);
+```
+You can also refer to example.php for detailed steps on how to generate the required RSA public/private keys for encryption and decryption.
 
 ## 🙇 Author
-- [Nicolas Chevallier](https://www.linkedin.com/in/nicolas-chevallier-525677/)
+- [Nicolas Chevallier](https://www.nicolas-chevallier.fr/) [Linkedin Bio](https://www.linkedin.com/in/nicolas-chevallier-525677/)
      
 ## 🙇 Acknowledgements      
 - [Antoine Lame](https://medium.com/@antoine.lame/how-to-encrypt-files-with-php-f4adead297de) for the inital idea
