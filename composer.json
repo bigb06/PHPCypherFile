@@ -1,0 +1,20 @@
+{
+    "name": "bigb06/phpcypherfile",
+    "description": "A PHP library for encrypting and decrypting files using the AES-256-CBC algorithm.",
+    "type": "library",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Nicolas Chevallier"
+        }
+    ],
+    "require": {
+        "php": ">=8.2",
+        "ext-openssl": "*"
+    },
+    "autoload": {
+        "psr-4": {
+            "PHPCypherFile\\": "src/"
+        }
+    }
+}
