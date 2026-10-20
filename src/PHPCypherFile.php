@@ -69,35 +69,42 @@ final class PHPCypherFile
 
         $fpDest = fopen($outputFile, 'wb');
         if (!$fpDest) {
+            fclose($fpSource);
             throw new RuntimeException('Error opening output file ' . $outputFile);
         }
 
-        $ivLength = openssl_cipher_iv_length(self::CYPHER);
-        $iv = openssl_random_pseudo_bytes($ivLength);
+        try {
+            $ivLength = openssl_cipher_iv_length(self::CYPHER);
+            $iv = random_bytes($ivLength);
 
-        $keyLength = 32; // 256-bit key
-        $symmetricKey = openssl_random_pseudo_bytes($keyLength);
+            $keyLength = 32; // 256-bit key
+            $symmetricKey = random_bytes($keyLength);
 
-        // Encrypt the symmetric key with the public key
-        openssl_public_encrypt($symmetricKey, $encryptedSymmetricKey, $publicKey);
+            // Encrypt the symmetric key with the public key
+            if (openssl_public_encrypt($symmetricKey, $encryptedSymmetricKey, $publicKey) === false) {
+                throw new RuntimeException('Error encrypting the symmetric key with the public key: ' . openssl_error_string());
+            }
 
-        // Write the encrypted symmetric key to the destination file
-        if (fwrite($fpDest, $encryptedSymmetricKey) === FALSE) {
-            throw new RuntimeException('Error writing encrypted symmetric key to the destination file ' . $outputFile);
+            // Write the encrypted symmetric key and the IV to the destination file
+            self::write($fpDest, $encryptedSymmetricKey, $outputFile);
+            self::write($fpDest, $iv, $outputFile);
+
+            while (!feof($fpSource)) {
+                $plaintext = fread($fpSource, $ivLength * self::FILE_ENCRYPTION_BLOCKS);
+                if ($plaintext === false) {
+                    throw new RuntimeException('Error reading input file ' . $inputFile);
+                }
+                $ciphertext = openssl_encrypt($plaintext, self::CYPHER, $symmetricKey, OPENSSL_RAW_DATA, $iv);
+                if ($ciphertext === false) {
+                    throw new RuntimeException('Error encrypting data: ' . openssl_error_string());
+                }
+                $iv = substr($ciphertext, 0, $ivLength);
+                self::write($fpDest, $ciphertext, $outputFile);
+            }
+        } finally {
+            fclose($fpSource);
+            fclose($fpDest);
         }
-
-        // Write the IV to the destination file
-        fwrite($fpDest, $iv);
-
-        while (!feof($fpSource)) {
-            $plaintext = fread($fpSource, $ivLength * self::FILE_ENCRYPTION_BLOCKS);
-            $ciphertext = openssl_encrypt($plaintext, self::CYPHER, $symmetricKey, OPENSSL_RAW_DATA, $iv);
-            $iv = substr($ciphertext, 0, $ivLength);
-            fwrite($fpDest, $ciphertext);
-        }
-
-        fclose($fpSource);
-        fclose($fpDest);
     }
 
     /**
@@ -127,29 +134,55 @@ final class PHPCypherFile
 
         $fpDest = fopen($outputFile, 'wb');
         if (!$fpDest) {
+            fclose($fpSource);
             throw new RuntimeException('Error opening output file ' . $outputFile);
         }
 
-        // Read the encrypted symmetric key from the source file
-        $encryptedSymmetricKey = fread($fpSource, 512);
+        try {
+            // Read the encrypted symmetric key from the source file
+            $encryptedSymmetricKey = fread($fpSource, 512);
 
-        // Decrypt the encrypted symmetric key with the private key
-        if (openssl_private_decrypt($encryptedSymmetricKey, $symmetricKey, $privateKey) === FALSE) {
-            throw new RuntimeException('Error decrypting the encrypted symmetric key with the private key');
+            // Decrypt the encrypted symmetric key with the private key
+            if ($encryptedSymmetricKey === false || openssl_private_decrypt($encryptedSymmetricKey, $symmetricKey, $privateKey) === false) {
+                throw new RuntimeException('Error decrypting the encrypted symmetric key with the private key');
+            }
+
+            // Read the IV from the source file
+            $iv = fread($fpSource, $ivLength);
+            if ($iv === false || strlen($iv) !== $ivLength) {
+                throw new RuntimeException('Error reading the IV from input file ' . $inputFile);
+            }
+
+            while (!feof($fpSource)) {
+                $ciphertext = fread($fpSource, $ivLength * (self::FILE_ENCRYPTION_BLOCKS + 1));
+                if ($ciphertext === false) {
+                    throw new RuntimeException('Error reading input file ' . $inputFile);
+                }
+                if ($ciphertext === '') {
+                    break;
+                }
+                $plaintext = openssl_decrypt($ciphertext, self::CYPHER, $symmetricKey, OPENSSL_RAW_DATA, $iv);
+                if ($plaintext === false) {
+                    throw new RuntimeException('Error decrypting data, the file may be corrupted: ' . openssl_error_string());
+                }
+                $iv = substr($ciphertext, 0, $ivLength);
+                self::write($fpDest, $plaintext, $outputFile);
+            }
+        } finally {
+            fclose($fpSource);
+            fclose($fpDest);
         }
+    }
 
-        // Read the IV from the source file
-        $iv = fread($fpSource, $ivLength);
-
-        while (!feof($fpSource)) {
-            $ciphertext = fread($fpSource, $ivLength * (self::FILE_ENCRYPTION_BLOCKS + 1));
-            $plaintext = openssl_decrypt($ciphertext, self::CYPHER, $symmetricKey, OPENSSL_RAW_DATA, $iv);
-            $iv = substr($ciphertext, 0, $ivLength);
-            fwrite($fpDest, $plaintext);
+    /**
+     * @param resource $fp
+     *
+     * @throws RuntimeException If the data could not be fully written.
+     */
+    private static function write($fp, string $data, string $file): void
+    {
+        if (fwrite($fp, $data) !== strlen($data)) {
+            throw new RuntimeException('Error writing to the destination file ' . $file);
         }
-
-        fclose($fpSource);
-        fclose($fpDest);
     }
 }
-?>
